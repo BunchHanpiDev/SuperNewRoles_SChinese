@@ -20,14 +20,17 @@ public static class CustomDeathExtensions
     {
         CustomDeath(target, deathType, source);
     }
-    public static void CustomDeath(this ExPlayerControl player, CustomDeathType deathType, ExPlayerControl source = null)
+    public static void CustomDeath(this ExPlayerControl player, CustomDeathType deathType, ExPlayerControl source = null, bool suppressKillAnimation = false)
     {
-        Logger.Info($"CustomDeath: {deathType}, Source: {source?.Player.Data.PlayerName ?? "NoPlayer"}, Target: {player.Player.Data.PlayerName}");
+        string sourceName = source?.Player?.Data?.PlayerName ?? "NoPlayer";
+        string sourceRoleStr = source != null ? source.Role.ToString() : "NoRole";
+        Logger.Info($"[Death] {deathType}: {player.PlayerId}:{player.Player.Data.PlayerName}({player.Role}) killed by {source?.PlayerId ?? -1}:{sourceName}({sourceRoleStr})", "SNR.GameState");
         switch (deathType)
         {
             case CustomDeathType.Exile:
                 player.Player.Exiled();
-                ExileEvent.Invoke(player);
+                if (ExileEvent.Invoke(player).RefCanceled)
+                    break;
                 FinalStatusManager.SetFinalStatus(player, FinalStatus.Exiled);
                 break;
             case CustomDeathType.FalseCharge:
@@ -213,6 +216,26 @@ public static class CustomDeathExtensions
                 FinalStatusManager.SetFinalStatus(player, FinalStatus.SluggerSlug);
                 MurderDataManager.AddMurderData(source, player);
                 break;
+            case CustomDeathType.ConjurerMagic:
+                if (source == null)
+                    throw new Exception("Source is null");
+                if (!TryKillEvent.Invoke(source, ref player).RefSuccess)
+                    break;
+                player.Player.MurderPlayer(player.Player, MurderResultFlags.Succeeded);
+                FinalStatusManager.SetFinalStatus(player, FinalStatus.ConjurerMagic);
+                MurderDataManager.AddMurderData(source, player);
+                break;
+            case CustomDeathType.RocketLauncher:
+                if (source == null)
+                    throw new Exception("Source is null");
+                if (!TryKillEvent.Invoke(source, ref player).RefSuccess)
+                    break;
+                if (!suppressKillAnimation && player != null && player.AmOwner && MeetingHud.Instance == null)
+                    CustomKillAnimationManager.SetCurrentCustomKillAnimation(new RocketLauncherKillAnimation());
+                player.Player.MurderPlayer(player.Player, MurderResultFlags.Succeeded);
+                FinalStatusManager.SetFinalStatus(player, FinalStatus.RocketLauncher);
+                MurderDataManager.AddMurderData(source, player);
+                break;
             case CustomDeathType.KnifeKill:
                 if (source == null)
                     throw new Exception("Source is null");
@@ -268,4 +291,6 @@ public enum CustomDeathType
     HappyGatling,
     SluggerSlug,
     WaveCannonSanta,
+    ConjurerMagic,
+    RocketLauncher,
 }

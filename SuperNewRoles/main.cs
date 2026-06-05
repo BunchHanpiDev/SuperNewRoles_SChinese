@@ -37,6 +37,7 @@ using AmongUs.GameOptions;
 using Il2CppInterop.Runtime;
 using SuperNewRoles.WaveCannonObj;
 using static SuperNewRoles.Patches.CursedTasks.CursedBuildSandcastleTask;
+using SuperNewRoles.Roles.Impostor;
 
 namespace SuperNewRoles;
 
@@ -95,10 +96,14 @@ public partial class SuperNewRolesPlugin : BasePlugin
         MainThreadId = Thread.CurrentThread.ManagedThreadId;
         Logger = Log;
 
-        SuperNewRolesPlugin.Logger.LogInfo($"BaseDirectory: {BaseDirectory}");
-        SuperNewRolesPlugin.Logger.LogInfo($"SecretDirectory: {SecretDirectory}");
-
         Instance = this;
+
+        Encryption.SetEncryptKey();
+
+        SuperNewRoles.Logger.Info($"BaseDirectory: {BaseDirectory}");
+        SuperNewRoles.Logger.Info($"SecretDirectory: {SecretDirectory}");
+
+        SuperNewRoles.Logger.Info($"Current version: {Constants.GetBroadcastVersion()}");
 
         SuperNewRoles.Patches.CursedTasks.Main.ClearAndReload();
 
@@ -113,8 +118,8 @@ public partial class SuperNewRolesPlugin : BasePlugin
 
         ConfigRoles.Init();
         UpdateCPUProcessorAffinity();
-        AssetManager.Load();
         CustomRoleManager.Load();
+        AssetManager.Load();
         ModTranslation.Load();
         var tasks = CustomRPCManager.Load();
         CustomOptionManager.Load();
@@ -126,6 +131,7 @@ public partial class SuperNewRolesPlugin : BasePlugin
         ApiServerManager.Initialize();
         RequestInGameManager.Load();
         FixOver15();
+        StartGameHandlerManager.Load();
 
         CustomServer.UpdateRegions();
 
@@ -290,10 +296,12 @@ public partial class SuperNewRolesPlugin : BasePlugin
         ClassInjector.RegisterTypeInIl2Cpp<SelectButtonsMenuOpenAnimation>();
         ClassInjector.RegisterTypeInIl2Cpp<LoadingUIComponent>();
         ClassInjector.RegisterTypeInIl2Cpp<ActionOnEsc>();
+        ClassInjector.RegisterTypeInIl2Cpp<RequestInGameDraftAutoSaver>();
         ClassInjector.RegisterTypeInIl2Cpp<RocketDeadbody>();
         ClassInjector.RegisterTypeInIl2Cpp<VersionUpdatesComponent>();
         ClassInjector.RegisterTypeInIl2Cpp<ReleaseNoteComponent>();
         ClassInjector.RegisterTypeInIl2Cpp<PatcherUpdaterComponent>();
+        ClassInjector.RegisterTypeInIl2Cpp<PresetFilePickerAndroidCallbackReceiver>();
         ClassInjector.RegisterTypeInIl2Cpp<Lantern>();
         ClassInjector.RegisterTypeInIl2Cpp<Drone>();
         ClassInjector.RegisterTypeInIl2Cpp<WormHole>();
@@ -305,6 +313,9 @@ public partial class SuperNewRolesPlugin : BasePlugin
         ClassInjector.RegisterTypeInIl2Cpp<BuildSandcastleMinigamePatch.CursedSandcastleBucketCloneMarker>();
         ClassInjector.RegisterTypeInIl2Cpp<WCSantaHandler>();
         ClassInjector.RegisterTypeInIl2Cpp<AnnouncementSelectMenuMarker>();
+        ClassInjector.RegisterTypeInIl2Cpp<OrpheusRitualCorpseMarker>();
+        ClassInjector.RegisterTypeInIl2Cpp<RocketLauncherProjectile>();
+        ClassInjector.RegisterTypeInIl2Cpp<RocketLauncherHeldPlayer>();
 
         try
         {

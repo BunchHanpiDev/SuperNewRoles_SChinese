@@ -7,6 +7,7 @@ using AmongUs.Data;
 namespace SuperNewRoles.Tests;
 
 // 翻訳 CSV のロード/言語切替/エスケープ処理/クリーンアップ時の動作を検証するテスト。
+[Collection("ModTranslation")]
 public class ModTranslationTests
 {
     private const string TestCsv =
@@ -125,5 +126,25 @@ public class ModTranslationTests
         after.Should().BeNull();
         // 目的: Cleanup 後はキーをそのまま返すこと
         ModTranslation.GetString("Test.Close").Should().Be("Test.Close");
+    }
+
+    [Fact]
+    public void EmbeddedCsv_IncludesRequestInGameClearButtonKeys()
+    {
+        try
+        {
+            ModTranslation.ClearTestTranslationCsv();
+            ModTranslation.SetTestLanguage(SupportedLangs.Japanese);
+            ModTranslation.Cleanup();
+            ModTranslation.Load();
+
+            ModTranslation.GetString("RequestInGameClearButton").Should().Be("入力クリア");
+            ModTranslation.GetString("RequestInGameClearConfirmButton").Should().Be("本当にクリアしますか？");
+        }
+        finally
+        {
+            ModTranslation.SetTestLanguage(SupportedLangs.English);
+            ModTranslation.Cleanup();
+        }
     }
 }

@@ -55,6 +55,9 @@ public class ExPlayerControl
     public RoleId Role { get; private set; }
     public ModifierRoleId ModifierRole { get; private set; }
     public GhostRoleId GhostRole { get; private set; }
+    public List<RoleId> RoleHistory { get; private set; } = new();
+    public List<GhostRoleId> GhostRoleHistory { get; private set; } = new();
+    public List<ModifierRoleId> ModifierRoleHistory { get; private set; } = new();
     public IRoleBase roleBase { get; private set; }
     public List<IModifierBase> ModifierRoleBases { get; private set; } = new();
     public IGhostRoleBase GhostRoleBase { get; private set; }
@@ -217,9 +220,14 @@ public class ExPlayerControl
     public void SetModifierRole(ModifierRoleId modifierRoleId)
     {
         if (ModifierRole.HasFlag(modifierRoleId)) return;
+        ModifierRoleId oldModifier = ModifierRole;
         if (AmOwner)
             SuperTrophyManager.DetachTrophy(Role);
         ModifierRole |= modifierRoleId;
+        if (ModifierRoleHistory.Count == 0 && oldModifier != ModifierRoleId.None)
+            ModifierRoleHistory.Add(oldModifier);
+        ModifierRoleHistory.Add(ModifierRole);
+        Logger.Info($"[Modifier] {PlayerId}:{Player?.name ?? "??"}({Role}) += {modifierRoleId}", "SNR.GameState");
         if (CustomRoleManager.TryGetModifierById(modifierRoleId, out var modifier))
         {
             modifier.OnSetRole(Player);
@@ -235,10 +243,15 @@ public class ExPlayerControl
     public void SetGhostRole(GhostRoleId ghostRoleId)
     {
         if (GhostRole == ghostRoleId) return;
+        if (GhostRoleHistory.Count == 0 && GhostRole != GhostRoleId.None)
+            GhostRoleHistory.Add(GhostRole);
+        GhostRoleHistory.Add(ghostRoleId);
         DetachOldGhostRole(GhostRole);
         if (AmOwner && GhostRole != GhostRoleId.None)
             SuperTrophyManager.DetachTrophy(GhostRole);
+        var oldGhostRole = GhostRole;
         GhostRole = ghostRoleId;
+        Logger.Info($"[GhostRole] {PlayerId}:{Player?.name ?? "??"}({Role}): {oldGhostRole} -> {ghostRoleId}", "SNR.GameState");
         if (CustomRoleManager.TryGetGhostRoleById(ghostRoleId, out var role))
         {
             role.OnSetRole(Player);
@@ -253,13 +266,15 @@ public class ExPlayerControl
             Logger.Error($"GhostRole {ghostRoleId} not found");
         }
     }
-    public void SetRole(RoleId roleId)
+    public void SetRole(RoleId roleId, bool recordHistory = true)
     {
         if (Role == roleId) return;
         RoleId oldRole = Role;
         DetachOldRole(Role);
         if (AmOwner)
             SuperTrophyManager.DetachTrophy(Role);
+        if (recordHistory)
+            AddRoleHistory(RoleHistory, oldRole, roleId);
         Role = roleId;
         Logger.Info($"[SetRole] Player {Player?.name} ({PlayerId}) changing role from {oldRole} to {roleId}, AmOwner: {AmOwner}");
         if (CustomRoleManager.TryGetRoleById(roleId, out var role))
@@ -302,6 +317,28 @@ public class ExPlayerControl
             Logger.Error($"SetRoleEvent.Invoke failed: {oldRole} -> {roleId}", "ExPlayerControl");
             Logger.Error(e.ToString(), "ExPlayerControl");
         }
+        if (AmOwner)
+        {
+            foreach (var taskAbility in GetAbilities<CustomTaskAbility>())
+            {
+                if (taskAbility.assignTaskData == null) continue;
+                taskAbility.AssignTasks();
+                break;
+            }
+        }
+    }
+
+    internal static void AddRoleHistory(List<RoleId> roleHistory, RoleId oldRole, RoleId roleId)
+    {
+        if (roleHistory.Count == 0 && oldRole != RoleId.None)
+            roleHistory.Add(oldRole);
+        roleHistory.Add(roleId);
+    }
+
+    internal static void AddRoleHistoryIfNeeded(List<RoleId> roleHistory, RoleId oldRole, RoleId roleId, bool recordHistory)
+    {
+        if (!recordHistory) return;
+        AddRoleHistory(roleHistory, oldRole, roleId);
     }
 
     public bool HasCustomKillButton()
@@ -406,8 +443,15 @@ public class ExPlayerControl
         }
         if (AmOwner)
             SuperTrophyManager.DetachTrophy(abilitiesToDetach);
+        ModifierRoleId oldModifier = ModifierRole;
         ModifierRole &= ~modifierRoleId;
         ModifierRoleBases.RemoveAll(x => modifierRoleId.HasFlag(x.ModifierRole));
+        if (ModifierRole != oldModifier)
+        {
+            if (ModifierRoleHistory.Count == 0 && oldModifier != ModifierRoleId.None)
+                ModifierRoleHistory.Add(oldModifier);
+            ModifierRoleHistory.Add(ModifierRole);
+        }
     }
     public void ReverseTask(ExPlayerControl target)
     {
@@ -439,7 +483,24 @@ public class ExPlayerControl
         NameText.UpdateNameInfo(this);
         NameText.UpdateNameInfo(target);
     }
-    public void ReverseRole(ExPlayerControl target)
+    public void CopyTaskProgressFrom(ExPlayerControl target)
+    {
+        if (target == null || target.Player == null) return;
+
+        var targetTasks = target.Player.myTasks.Where(x => x.TryCast<NormalPlayerTask>() != null).ToArray();
+        var targetTaskIds = targetTasks.Select(x => (byte)x.Index).ToArray();
+        var targetCompletedTaskIds = targetTasks.Where(x => x.IsComplete).Select(x => (byte)x.Id);
+
+        Data.SetTasks(targetTaskIds);
+        foreach (var taskId in targetCompletedTaskIds)
+        {
+            Player.CompleteTask((uint)taskId);
+        }
+
+        NameText.UpdateNameInfo(this);
+        NameText.UpdateNameInfo(target);
+    }
+    public void ReverseRole(ExPlayerControl target, bool recordTargetHistory = true)
     {
         if (target == null || target.Player == null) return;
 
@@ -450,7 +511,7 @@ public class ExPlayerControl
         // ToArray()を使わずに直接リストから収集
         foreach (var ability in PlayerAbilities)
         {
-            if (ability != null && ability.Parent != null && ability.Parent is not AbilityParentPlayer)
+            if (ability != null && IsRoleAbility(ability.Parent))
             {
                 myAbilities.Add((ability, ability.AbilityId));
             }
@@ -458,7 +519,7 @@ public class ExPlayerControl
 
         foreach (var ability in target.PlayerAbilities)
         {
-            if (ability != null && ability.Parent != null && ability.Parent is not AbilityParentPlayer)
+            if (ability != null && IsRoleAbility(ability.Parent))
             {
                 targetAbilities.Add((ability, ability.AbilityId));
             }
@@ -486,6 +547,9 @@ public class ExPlayerControl
         if (Player.AmOwner)
             SuperTrophyManager.DetachTrophy(Role);
 
+        AddRoleHistoryIfNeeded(RoleHistory, myRole, targetRole, true);
+        AddRoleHistoryIfNeeded(target.RoleHistory, targetRole, myRole, recordTargetHistory);
+
         Role = targetRole;
         roleBase = targetRoleBase;
         target.Role = myRole;
@@ -495,21 +559,56 @@ public class ExPlayerControl
         foreach (var ability in myAbilities)
         {
             var currentParent = ability.ability.Parent;
-            if (currentParent is not AbilityParentRole)
+            if (!TryMoveRoleParent(currentParent, target))
                 continue;
-            currentParent.Player = target; // targetにAttachするのでParent.Playerはtarget
             target.AttachAbility(ability.ability, currentParent);
         }
         foreach (var ability in targetAbilities)
         {
             var currentParent = ability.ability.Parent;
-            if (currentParent is not AbilityParentRole)
+            if (!TryMoveRoleParent(currentParent, this))
                 continue;
-            currentParent.Player = this; // thisにAttachするのでParent.Playerはthis
             AttachAbility(ability.ability, currentParent);
         }
         // 名前情報を更新
         NameText.UpdateAllNameInfo();
+    }
+
+    private static bool IsRoleAbility(AbilityParentBase parent)
+    {
+        while (parent != null)
+        {
+            switch (parent)
+            {
+                case AbilityParentRole:
+                    return true;
+                case AbilityParentAbility parentAbility when parentAbility.ParentAbility != null:
+                    parent = parentAbility.ParentAbility.Parent;
+                    continue;
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    private static bool TryMoveRoleParent(AbilityParentBase parent, ExPlayerControl player)
+    {
+        while (parent != null)
+        {
+            switch (parent)
+            {
+                case AbilityParentRole parentRole:
+                    parentRole.Player = player;
+                    return true;
+                case AbilityParentAbility parentAbility when parentAbility.ParentAbility != null:
+                    parent = parentAbility.ParentAbility.Parent;
+                    continue;
+                default:
+                    return false;
+            }
+        }
+        return false;
     }
     public void Disconnected()
     {
@@ -659,6 +758,12 @@ public class ExPlayerControl
             return true;
         }
 
+        // 神は生存中でも全プレイヤーの役職を確認できる。
+        if (Role == RoleId.God)
+        {
+            return true;
+        }
+
         // ローカルプレイヤーが生きている場合はfalse
         if (!IsDead())
         {
@@ -668,6 +773,11 @@ public class ExPlayerControl
         // バスカーの偽装死時は他のプレイヤーの役職を見えないようにする
         bool isBuskerFakeDeath = GetAbility<BuskerPseudocideAbility>()?.isEffectActive == true;
         if (isBuskerFakeDeath && PlayerId != otherPlayer.PlayerId)
+        {
+            return false;
+        }
+
+        if (SuperNewRoles.Roles.Impostor.OrpheusMainAbility.ShouldHideGhostRolesFor(PlayerId))
         {
             return false;
         }

@@ -1,6 +1,7 @@
 using UnityEngine;
 using TMPro;
 using SuperNewRoles.Modules;
+using SuperNewRoles.Patches;
 using UnityEngine.Events;
 using System;
 using System.Reflection;
@@ -9,6 +10,7 @@ using HarmonyLib;
 using System.Collections.Generic;
 using SuperNewRoles.CustomOptions;
 using SuperNewRoles.Roles;
+using InnerNet;
 
 namespace SuperNewRoles.HelpMenus;
 
@@ -22,6 +24,7 @@ public static class HelpMenuObjectManager
     public static HelpMenuCategoryBase? CurrentCategory;
     public const HelpMenuCategory DEFAULT_MENU_GAME = HelpMenuCategory.MyRoleInfomation;
     public const HelpMenuCategory DEFAULT_MENU_LOBBY = HelpMenuCategory.AssignmentsSettingInfomation;
+    public static bool IsHelpMenuActive => helpMenuObject != null && fadeCoroutine != null && fadeCoroutine.isActive;
 
     private static bool IsLobbySettingsMenuOpen()
     {
@@ -182,7 +185,7 @@ public static class HelpMenuObjectManager
 
     public static void ShowOrHideHelpMenu()
     {
-        if (!CanToggleHelpMenu())
+        if (!IsHelpMenuActive && !CanToggleHelpMenu())
             return;
 
         if (helpMenuObject == null)
@@ -254,6 +257,10 @@ public static class HelpMenuObjectManager
         // ヘルプメニューを非表示にするときにホスト情報とMeetingHudのマスクエリアを表示する
         RoleOptionMenu.UpdateHostInfoMaskArea(!IsLobbySettingsMenuOpen());
         ModHelpers.UpdateMeetingHudMaskAreas(true);
+
+        var activeIndicator = HelpMenusHudManagerStartPatch.helpMenuButton?.transform.Find("active");
+        if (activeIndicator != null)
+            activeIndicator.gameObject.SetActive(false);
     }
     // overlayを閉じる時。
     [HarmonyPatch(typeof(KeyboardJoystick), nameof(KeyboardJoystick.Update))]
@@ -267,10 +274,10 @@ public static class HelpMenuObjectManager
                 return;
             }
 
-            // チャットがアクティブ、またはEsc, Tab, Hキーのいずれかが押された場合、
+            // チャットがアクティブ、またはEsc/Tabキーのいずれかが押された場合、
             // Overlayが表示されているなら非表示に切り替える
             bool isChatActive = FastDestroyableSingleton<HudManager>.Instance.Chat.IsOpenOrOpening;
-            bool isCancelKeyPressed = Input.GetKeyDown(KeyCode.Escape);
+            bool isCancelKeyPressed = Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Tab);
             if (isChatActive || isCancelKeyPressed)
             {
                 HideHelpMenu();
@@ -288,7 +295,20 @@ public static class HelpMenuObjectManager
             }
 
             bool enabled = helpMenuObject == null || fadeCoroutine == null || !fadeCoroutine.isActive;
-            __instance.StartButton.enabled = enabled;
+            if (AmongUsClient.Instance.AmHost && GameData.Instance != null)
+            {
+                bool minOk = GameData.Instance.PlayerCount >= __instance.MinPlayers;
+                bool startEnabled = enabled && minOk;
+                if (AmongUsClient.Instance.NetworkMode == NetworkModes.OnlineGame)
+                    startEnabled = startEnabled && SyncVersion.CanHostStartGame();
+                __instance.StartButton.SetButtonEnableState(startEnabled);
+                if (__instance.StartButtonGlyph != null)
+                    __instance.StartButtonGlyph.SetColor(startEnabled ? Palette.EnabledColor : Palette.DisabledClear);
+            }
+            else
+            {
+                __instance.StartButton.enabled = enabled;
+            }
             __instance.LobbyInfoPane.EditButton.enabled = enabled;
             PassiveButton p = null;
             if (__instance.LobbyInfoPane.HostViewButton != null)

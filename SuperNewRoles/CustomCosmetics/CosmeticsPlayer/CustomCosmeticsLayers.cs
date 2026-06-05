@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Il2CppInterop.Runtime;
 using PowerTools;
+using SuperNewRoles.CustomCosmetics;
 using SuperNewRoles.Modules;
 using TMPro;
 using UnityEngine;
@@ -24,7 +25,8 @@ public static class CustomCosmeticsLayers
     public static Dictionary<int, CustomVisorLayer> visorLayer2s = new();
     public static bool Exists(CosmeticsLayer cosmeticsLayer, out CustomCosmeticsLayer layer)
     {
-        return layers.TryGetValue(cosmeticsLayer.GetInstanceID(), out layer) ? layers != null : false;
+        layer = null;
+        return cosmeticsLayer != null && layers != null && layers.TryGetValue(cosmeticsLayer.GetInstanceID(), out layer) && layer != null;
     }
     public static CustomCosmeticsLayer ExistsOrInitialize(CosmeticsLayer cosmeticsLayer)
     {
@@ -84,17 +86,27 @@ public class CustomCosmeticsLayer
         cosmeticsLayer.transform.parent.gameObject.AddComponent<SortingGroup>();
         this.cosmeticsLayer = cosmeticsLayer;
 
-        foreach (var bodySprite in cosmeticsLayer.bodySprites)
+        if (cosmeticsLayer.bodySprites != null)
         {
-            bodySprite.BodySprite.sortingOrder = 6;
+            foreach (var bodySprite in cosmeticsLayer.bodySprites)
+            {
+                if (bodySprite?.BodySprite != null)
+                    bodySprite.BodySprite.sortingOrder = 6;
+            }
         }
-        foreach (var spriteRenderer in cosmeticsLayer.skin.GetComponentsInChildren<SpriteRenderer>())
+        if (cosmeticsLayer.skin != null)
         {
-            spriteRenderer.sortingOrder = 7;
+            foreach (var spriteRenderer in cosmeticsLayer.skin.GetComponentsInChildren<SpriteRenderer>())
+            {
+                spriteRenderer.sortingOrder = 7;
+            }
         }
-        foreach (var textMeshPro in cosmeticsLayer.nameTextContainer.GetComponentsInChildren<TextMeshPro>())
+        if (cosmeticsLayer.nameTextContainer != null)
         {
-            textMeshPro.sortingOrder = 500;
+            foreach (var textMeshPro in cosmeticsLayer.nameTextContainer.GetComponentsInChildren<TextMeshPro>())
+            {
+                textMeshPro.sortingOrder = 500;
+            }
         }
 
         ModdedCosmetics = new GameObject("ModdedCosmetics");
@@ -103,6 +115,7 @@ public class CustomCosmeticsLayer
         ModdedCosmetics.transform.localScale = Vector3.one;
         ModdedCosmetics.transform.localRotation = Quaternion.identity;
         ModdedCosmetics.layer = cosmeticsLayer.gameObject.layer;
+        ModdedCosmetics.SetActive(CustomCosmeticsLoader.IsRuntimeEnabled);
 
         cosmeticsLayer.transform.localPosition = new(0, 0, -0.0001f);
 
